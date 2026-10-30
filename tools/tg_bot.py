@@ -194,6 +194,8 @@ def whitelisted(chat_id):
         return True
     allowed = {c.strip() for c in raw.split(",") if c.strip()}
     return str(chat_id) in allowed
+
+
 # ---------------------------------------------------------------- 回复逻辑
 def compose_reply(text, chat_id, state, faq):
     lowered = text.strip().lower()
