@@ -98,3 +98,20 @@
   启动前会先停掉 FAQ 机器人（同一 token 只允许一个 getUpdates 消费者）。
 - 本轮（chat `5649315467`，会话 `1793340844984_07d19`）：按用户要求发出自我介绍，
   `tools/tg.py send` 返回 `message_id=13`，链路（桥 + Bot API）均正常。
+
+## Telegram ↔ Cline 桥（2026-10-30 06:18，用户真实需求）
+
+> 用户澄清：要的是「在 TG 里跟我（Agent）对话」，不是客服机器人。FAQ 机器人降级为可选。
+
+- 实现：`tools/tg_bridge.mjs`（Node）用 `@cline/core` 的 `HubSessionClient` 连本地 Hub
+  （`GET 127.0.0.1:8081/hub-token` 取 url+authToken），每个 chat 一个 runtime session，
+  `sendRuntimeSession()` 取 `result.text` 回发 Telegram。
+- 守护：`tools/tg_bridge_service.sh`（start/stop/restart/status/logs，崩溃退避重启，`stop` 0.5s），
+  `tools/tg_watchdog.sh` 改为拉桥（cron 每 5 分钟）。
+- 实测证据：`--self-test` → `self-test 回复: "pong"`（exit 0）；
+  `--simulate` 带工具 → agent 真的列了 `/workspace` 目录；
+  `--replay 5649315467 ...` 两轮真实发送：`已回复 ... 用时 6.0s len=58` 与 `4.7s len=120`（tools=1，读到 logs 目录）。
+- 侧证：桥接会话（tools=1 + 自动批准）真的在仓库里写了 `STATUS.md` 并提交（commit `0366160`），说明是完整 agent 而非问答壳。
+- 坑：同一 token 只能一个 getUpdates 消费者（桥在跑就别手动 `updates`）；多个 `--replay` 并发会互相拖住，一次一轮；
+  `--replay` 已改用独立状态文件避免污染常驻桥。
+- 现状：`运行中 (pid 2109)`，单实例，等待用户在 TG 发消息做入站验证。

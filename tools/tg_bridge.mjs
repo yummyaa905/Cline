@@ -21,7 +21,8 @@ import { fileURLToPath } from "node:url";
 import { HubSessionClient } from "/app/node_modules/@cline/core/dist/hub/index.js";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const STATE_PATH = process.env.TG_BRIDGE_STATE || path.join(ROOT, "logs", "tg_bridge_state.json");
+const STATE_PATH_DEFAULT = path.join(ROOT, "logs", "tg_bridge_state.json");
+let STATE_PATH = process.env.TG_BRIDGE_STATE || STATE_PATH_DEFAULT;
 const LOG_PATH = process.env.TG_BRIDGE_LOG || path.join(ROOT, "logs", "tg-bridge.log");
 const TELEGRAM_API = process.env.TG_API_BASE || "https://api.telegram.org";
 const MAX_LEN = 4000;
@@ -185,16 +186,47 @@ async function ensureSession(client, state, chatId) {
   return { sessionId: started.sessionId, config };
 }
 
+/** 标记「正在处理」的回合：进程中途被重启时，回复会丢，下个实例据此提示用户重发 */
+function markPending(state, chatId, prompt) {
+  const entry = state.chats[String(chatId)];
+  if (!entry) return;
+  entry.pending = { at: new Date().toISOString(), prompt: String(prompt).slice(0, 60) };
+  saveState(state);
+}
+
+function clearPending(state, chatId) {
+  const entry = state.chats[String(chatId)];
+  if (!entry || !entry.pending) return;
+  delete entry.pending;
+  saveState(state);
+}
+
+/** 启动时补发提示：上次被打断的回合没有回复，明确告诉用户重发 */
+async function recoverPending(state) {
+  for (const [chatId, entry] of Object.entries(state.chats)) {
+    if (!entry?.pending) continue;
+    const at = entry.pending.at || "未知时间";
+    delete entry.pending;
+    saveState(state);
+    log(`[warn] 发现被中断的回合 chat=${chatId} at=${at}，已提示用户重发`);
+    await sendText(
+      chatId,
+      `⚠️ 上一次请求（${at}）处理到一半被重启打断了，那条回复没发出来。\n请重发一次；想清空上下文可以 /new。`,
+    ).catch((err) => log(`[warn] 补发提示失败 chat=${chatId}: ${err?.message || err}`));
+  }
+}
+
 async function ask(client, state, chatId, prompt) {
   const { sessionId, config } = await ensureSession(client, state, chatId);
+  markPending(state, chatId, prompt);
   const turn = client.sendRuntimeSession(sessionId, { config, prompt }, { timeoutMs: TURN_TIMEOUT_MS });
   const out = await withTimeout(turn, TURN_TIMEOUT_MS, `agent 超过 ${TURN_TIMEOUT_MS / 1000}s 未返回`);
   const entry = state.chats[String(chatId)];
   if (entry) {
     entry.turns = (entry.turns || 0) + 1;
     entry.lastAt = new Date().toISOString();
-    saveState(state);
   }
+  clearPending(state, chatId);
   return out?.result?.text ?? "（agent 没有返回文本）";
 }
 
@@ -245,6 +277,7 @@ async function pollLoop(client, { once = false, pollTimeout = 30 } = {}) {
   const state = loadState();
   const cfg = sessionConfig();
   log(`桥接启动：provider=${cfg.provider} model=${cfg.model} tools=${cfg.enableTools}`);
+  await recoverPending(state);
   for (;;) {
     const params = { timeout: pollTimeout, limit: 20 };
     if (state.offset != null) params.offset = state.offset;
@@ -298,6 +331,8 @@ async function main(argv) {
   const replayIdx = argv.indexOf("--replay");
   if (replayIdx !== -1) {
     // node tools/tg_bridge.mjs --replay <chatId> <text>：走真实链路（Hub → agent → Telegram 发送）
+    // 用独立状态文件，避免污染常驻桥的 offset / 会话映射
+    STATE_PATH = path.join(ROOT, "logs", "tg_bridge_replay_state.json");
     const chatId = argv[replayIdx + 1];
     const text = argv.slice(replayIdx + 2).join(" ") || "你好";
     const state = { offset: null, chats: {} };
