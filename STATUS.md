@@ -145,3 +145,5 @@
 - 首次触发曾失败（`provider`/`model` 为空），已补 `modelSelection` 修好。
 - 期间收到用户真实入站消息并被处理，桥接会话还自己提交了改进 `998dc69`（持久化 in-flight 回合）。
 - 修掉 `SessionNotFoundError`：会话映射失效时自动重建会话并重试一次（用 bogus session 实测 → `新建会话 … 已回复 2.6s`）。
+- **cron 自动触发实测**：UTC 06:25:14 定时运行自己触发（`cron_runs.trigger_kind='schedule'`，`status=done`），
+  `next_run_at` 自动推进到 `06:30:00`，无需人为干预。
