@@ -1,56 +1,67 @@
-# Cline × Telegram 客服机器人
+# Telegram ↔ Cline 桥
 
-零依赖（仅 Python 标准库）的 Telegram 客服 / AI 自动回复机器人，附带守护脚本与自动化测试。
+在 Telegram 里给 bot 发消息，由本机 Cline Hub 拉起 / 续接一个 agent 会话干活，再把结果发回 Telegram。
+也就是说：**Telegram 成了操作这个沙箱里 agent 的入口**（能读写文件、跑命令、提交代码）。
 
 ## 目录
 
 ```
-tools/tg.py            Telegram Bot API 基础客户端（me / send / updates / listen）
-tools/tg_bot.py        24/7 客服机器人（长轮询、FAQ、可选 AI、限流、去重、白名单）
-tools/tg_service.sh    守护脚本（start|stop|restart|status|logs，崩溃自动重启+退避）
-tools/tg_watchdog.sh   健康检查自愈（适合挂 cron，每 5 分钟一次）
-data/faq.json          客服知识库（关键词 → 标准答案）
-tests/test_tg_bot.py   端到端测试（本地假 Telegram API，无需真 token）
+tools/tg_bridge.mjs         桥本体（Node，复用 @cline/core 的 HubSessionClient）
+tools/tg_bridge_service.sh  桥的守护脚本（start|stop|restart|status|logs，崩溃自动重启+退避）
+tools/tg_watchdog.sh        健康检查自愈（给 cron 每 5 分钟调用）
+tools/tg.py                 Telegram Bot API 基础客户端（me / send / updates / listen）
+tools/tg_bot.py             【可选】独立 FAQ 客服机器人（不需要 agent，和桥二选一）
+tools/tg_service.sh         【可选】FAQ 机器人的守护脚本
+data/faq.json               【可选】FAQ 知识库
+tests/test_tg_bot.py        【可选】FAQ 机器人的测试（15 个用例）
 ```
 
 ## 快速开始
 
 ```bash
-cp .env.example .env          # 填入 TG_BOT_TOKEN（BotFather 获取）
-python3 tools/tg_bot.py --dry-run     # 自检：token/FAQ/限流/白名单
-python3 -m unittest discover -s tests -v   # 10 个用例，全部通过
-tools/tg_service.sh start             # 后台常驻（崩溃自动重启）
-tools/tg_service.sh status            # 查看状态 + 最近日志
-tools/tg_service.sh logs              # 跟踪日志
-tools/tg_service.sh stop              # 优雅停止
+cp .env.example .env    # 填 TG_BOT_TOKEN（BotFather 获取）
+tools/tg_bridge_service.sh start     # 后台常驻
+tools/tg_bridge_service.sh status    # 状态 + 最近日志
+tools/tg_bridge_service.sh logs      # 跟踪日志
+tools/tg_bridge_service.sh stop      # 优雅停止（0.5s 内）
 ```
 
-## 行为说明
+自检与调试：
 
-- **回复优先级**：内置指令（/start /help /faq /id /reset）→「人工」转人工提示 → AI（若配置）→ FAQ 关键词匹配 → 兜底话术。
-- **不重复回复**：`update_id` 持久化在 `logs/tg_state.json`，重启后继续；同一消息重复投递会被去重。
-- **限流**：默认每个 chat 每分钟 20 条（`TG_RATE_LIMIT`）。
-- **白名单**：`TG_ALLOWED_CHATS=123,456`，留空表示对所有人开放。
-- **AI（可选）**：设置 `AI_BASE_URL` + `AI_API_KEY` + `AI_MODEL`（OpenAI 兼容 `/chat/completions`）；AI 调用失败自动回退 FAQ。
-- **隐私**：`TG_BOT_TOKEN` 只从环境变量或 `.env` 读取，`.env` 已被 `.gitignore` 忽略。
+```bash
+node tools/tg_bridge.mjs --self-test              # 建会话 + 问一句，验证 Hub 链路
+node tools/tg_bridge.mjs --simulate "你好"         # 只跑一轮，打印「会发给 TG 的内容」，不发送
+node tools/tg_bridge.mjs --replay <chatId> "指令"  # 走真实链路：agent 回答 → 真的发到 Telegram
+```
 
-## 常驻策略
+## 它怎么工作
 
-容器里没有 systemd/crontab，所以用两层保障：
+1. `GET http://127.0.0.1:8081/hub-token` 拿 Hub 的 `url` + `authToken`（沙箱内已就绪）。
+2. `HubSessionClient` 连 Hub，`startRuntimeSession()` 为每个 chat 建一个会话。
+3. 每条 Telegram 消息 → `sendRuntimeSession(sessionId, { config, prompt })`，取 `result.text` 回发。
+4. `offset` 存 `logs/tg_bridge_state.json`：重启不重复处理；`/new` 可开新会话。
 
-1. `tools/tg_service.sh` 的 supervisor 循环：进程退出非 0 时按 2→4→…→60 秒退避重启
-   （supervisor 收到 TERM 会把信号转发给机器人，`stop` 实测 0.5 秒内退出且无残留进程）。
-2. `tools/tg_watchdog.sh` 挂到 Cline 的 cron 规格（每 5 分钟）：宿主进程被回收后把机器人重新拉起。
+## 投喂给 agent 的能力
+
+`TG_BRIDGE_TOOLS=1`（默认开）时 agent 可用工具；`TG_BRIDGE_AUTO_APPROVE=1` 表示无人值守自动批准，
+否则带工具调用会卡在等待批准。只想纯聊天就设 `TG_BRIDGE_TOOLS=0`。
+
+## 指令
+
+- `/help` `/start` — 使用说明
+- `/status` — 当前会话 ID、轮次、最近时间
+- `/new` — 丢弃上下文，开新会话
 
 ## 注意事项（踩过的坑）
 
-- **不要在机器人运行时手动调用 `tools/tg.py updates`**：Telegram 同一 token 只允许一个
-  `getUpdates` 消费者，两个进程会互相抛出 `409 Conflict: terminated by other getUpdates request`，
-  并可能抢占 update 导致漏消息。要看消息请 `tools/tg_service.sh stop` 后再查。
-- 重启前务必 `stop`（脚本会等旧实例真正退出）；旧实例残留会导致 409 与新实例抢消息。
-- `TG_BOT_TOKEN` 一旦泄露，去 @BotFather `/revoke` 换新，再更新 `.env` 后 `restart` 即可。
+- **同一个 bot token 只能有一个 `getUpdates` 消费者**：桥在跑时不要再 `python3 tools/tg.py updates`，
+  否则互相 `409 Conflict` 并可能抢消息。桥和 FAQ 机器人（`tg_service.sh`）也只能二选一，
+  `tg_bridge_service.sh start` 会自动停掉 FAQ 机器人。
+- 长任务请用 `setsid nohup ... &` 起，前台跑容易被会话超时打断。
+- 并发别乱开：多个 `--replay` 同时跑会各自建会话、互相拖慢（实测会卡住），一次一轮。
 
 ## 已知限制
 
-- 机器人的存活上限取决于沙箱/宿主是否被回收；生产环境建议部署到常驻 VPS（本仓库脚本可直接复用）。
-- 知识库只有 6 条示例，请按业务补充 `data/faq.json`。
+- 进程存活取决于沙箱是否被回收；被回收后 `tools/tg_watchdog.sh` 可由 cron 重新拉起。
+- 桥用的是当前 `cline-cloud` 模型（`TG_BRIDGE_MODEL` 可改），单个回合默认 300 秒超时。
+- `TG_BOT_TOKEN` 泄露请去 @BotFather `/revoke` 换新，更新 `.env` 后 `restart`。

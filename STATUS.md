@@ -7,8 +7,8 @@
 
 - 日期：2026-10-30
 - 工作目录：`/workspace`（仓库 `github.com/yummyaa905/Cline`，初始为空仓库、无提交、无 issue）
-- 已完成：无代码变更；仅建立分支 `cline/krawce2s` 与状态记录
-- 待办：等待用户给出具体任务（修 bug / 搭项目 / 拉取代码）
+- 已完成：Telegram ↔ Cline 桥上线并端到端跑通（详见下方各节；`tools/tg_bridge_service.sh status` → 运行中）
+- 待办：无阻塞项；等用户新需求
 
 ## 新会话恢复协议
 
