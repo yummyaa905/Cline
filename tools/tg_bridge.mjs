@@ -217,17 +217,36 @@ async function recoverPending(state) {
 }
 
 async function ask(client, state, chatId, prompt) {
-  const { sessionId, config } = await ensureSession(client, state, chatId);
-  markPending(state, chatId, prompt);
-  const turn = client.sendRuntimeSession(sessionId, { config, prompt }, { timeoutMs: TURN_TIMEOUT_MS });
-  const out = await withTimeout(turn, TURN_TIMEOUT_MS, `agent 超过 ${TURN_TIMEOUT_MS / 1000}s 未返回`);
-  const entry = state.chats[String(chatId)];
-  if (entry) {
-    entry.turns = (entry.turns || 0) + 1;
-    entry.lastAt = new Date().toISOString();
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const { sessionId, config } = await ensureSession(client, state, chatId);
+    markPending(state, chatId, prompt);
+    try {
+      const turn = client.sendRuntimeSession(sessionId, { config, prompt }, { timeoutMs: TURN_TIMEOUT_MS });
+      const out = await withTimeout(turn, TURN_TIMEOUT_MS, `agent 超过 ${TURN_TIMEOUT_MS / 1000}s 未返回`);
+      const entry = state.chats[String(chatId)];
+      if (entry) {
+        entry.turns = (entry.turns || 0) + 1;
+        entry.lastAt = new Date().toISOString();
+      }
+      clearPending(state, chatId);
+      return out?.result?.text ?? "（agent 没有返回文本）";
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err?.message || err);
+      // 会话在 hub 侧已不存在（沙箱重启/会话被清理）→ 丢弃映射，重建会话后重试一次
+      if (/session not found/i.test(msg)) {
+        log(`[warn] 会话 ${sessionId} 已失效，重建会话后重试`);
+        delete state.chats[String(chatId)];
+        saveState(state);
+        continue;
+      }
+      clearPending(state, chatId);
+      throw err;
+    }
   }
   clearPending(state, chatId);
-  return out?.result?.text ?? "（agent 没有返回文本）";
+  throw lastErr;
 }
 
 const HELP_TEXT = () =>

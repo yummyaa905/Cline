@@ -63,6 +63,20 @@ node tools/tg_bridge.mjs --replay <chatId> "指令"  # 走真实链路：agent �
 - 长任务请用 `setsid nohup ... &` 起，前台跑容易被会话超时打断。
 - 并发别乱开：多个 `--replay` 同时跑会各自建会话、互相拖慢（实测会卡住），一次一轮。
 
+## 自愈：挂到 Cline Hub 的 cron
+
+```bash
+node tools/tg_watchdog_cron.mjs --install      # 创建计划（同名则更新），默认 */5 * * * *
+node tools/tg_watchdog_cron.mjs --list         # 看计划
+node tools/tg_watchdog_cron.mjs --run-now      # 立刻触发一次
+node tools/tg_watchdog_cron.mjs --executions   # 最近执行记录
+node tools/tg_watchdog_cron.mjs --delete       # 删除
+```
+
+- 计划名 `tg-bridge-watchdog`，`*/5 * * * *` / `Asia/Shanghai`，落在 `~/.cline/cron` + `cron.db`（`cron_specs`）。
+- 到点由 Hub 起一个 `yolo` 会话执行 `bash tools/tg_watchdog.sh`：桥在 → 输出 `ok`；桥不在 → 自动 `start`。
+- 可用 `TG_WATCHDOG_CRON` / `TG_WATCHDOG_TZ` 覆盖周期与时区。
+
 ## 已知限制
 
 - 进程存活取决于沙箱是否被回收；被回收后 `tools/tg_watchdog.sh` 可由 cron 重新拉起。

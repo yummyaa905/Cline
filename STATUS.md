@@ -134,3 +134,14 @@
 - 坑：同一 token 只能一个 getUpdates 消费者（桥在跑就别手动 `updates`）；多个 `--replay` 并发会互相拖住，一次一轮；
   `--replay` 已改用独立状态文件避免污染常驻桥。
 - 现状：`运行中 (pid 2109)`，单实例，等待用户在 TG 发消息做入站验证。
+
+## Cron 自愈（2026-10-30 06:22）
+
+- 新增 `tools/tg_watchdog_cron.mjs`：通过 Hub API 管理 cron 计划（install/list/run-now/executions/delete）。
+- 已安装计划 `tg-bridge-watchdog`（`sched_50a22dc9…`，cron `*/5 * * * *`，`Asia/Shanghai`，yolo + 自动批准），
+  落库证据：`cron_specs` → `('cspec_a37bfc54…','tg-bridge-watchdog','schedule','*/5 * * * *','2026-10-30T06:25:00.000Z',1)`。
+- 手动触发两次：`status: success`（4s / 4s）。
+- **自愈实测**：`tg_bridge_service.sh stop` → 用 cron `--run-now` 触发 → 桥被自动拉起（pid 2489），`status` 报运行中。
+- 首次触发曾失败（`provider`/`model` 为空），已补 `modelSelection` 修好。
+- 期间收到用户真实入站消息并被处理，桥接会话还自己提交了改进 `998dc69`（持久化 in-flight 回合）。
+- 修掉 `SessionNotFoundError`：会话映射失效时自动重建会话并重试一次（用 bogus session 实测 → `新建会话 … 已回复 2.6s`）。
