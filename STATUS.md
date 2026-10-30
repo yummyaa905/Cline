@@ -89,3 +89,12 @@
   「今天天气怎么样」「你们老板是谁」→ 正确落到兜底话术。
 - 测试增至 **15 条**全绿（新增：条目数/关键词下限、自匹配一致性、口语化问法、无关问题兜底）。
 - 启动日志新增 FAQ 条数，便于确认热加载：`机器人启动，已处理消息 4 条，FAQ=22 条，AI=False`。
+
+## Telegram ↔ Cline 桥（2026-10-30 06:1x）
+
+- `tools/tg_bridge.mjs`：Telegram 消息 → Cline Hub 会话 → 回复发回 Telegram；会话按 chat 复用
+  （`logs/tg_bridge_state.json`），支持 `/new` `/status` `/help`，以及 `--self-test` / `--simulate` / `--replay`。
+- `tools/tg_bridge_service.sh`：桥的守护（start/stop/restart/status/logs），非 0 退出按 2→4→…→60s 退避重启；
+  启动前会先停掉 FAQ 机器人（同一 token 只允许一个 getUpdates 消费者）。
+- 本轮（chat `5649315467`，会话 `1793340844984_07d19`）：按用户要求发出自我介绍，
+  `tools/tg.py send` 返回 `message_id=13`，链路（桥 + Bot API）均正常。
