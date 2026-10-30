@@ -312,7 +312,7 @@ def poll_once(token, state, faq, poll_timeout=30):
 
 def run_forever(token, faq, poll_timeout):
     state = load_state()
-    log(f"机器人启动，已处理消息 {len(state['seen'])} 条，AI={ai_enabled()}")
+    log(f"机器人启动，已处理消息 {len(state['seen'])} 条，FAQ={len(faq)} 条，AI={ai_enabled()}")
     while _running:
         try:
             handled = poll_once(token, state, faq, poll_timeout)

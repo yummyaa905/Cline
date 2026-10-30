@@ -103,8 +103,37 @@ class TGBotTest(unittest.TestCase):
         return FakeTelegram.sent
 
     def test_faq_loaded(self):
-        self.assertEqual(len(self.faq), 6)
+        self.assertGreaterEqual(len(self.faq), 20)
         self.assertTrue(self.faq[0]["keywords"])
+        for item in self.faq:
+            self.assertGreaterEqual(len(item["keywords"]), 2, msg=f"{item['question']} 关键词太少")
+
+    def test_every_faq_question_matches_itself(self):
+        for item in self.faq:
+            hit = self.bot.match_faq(item["question"], self.faq)
+            self.assertIsNotNone(hit, msg=f"{item['question']} 无法命中自己")
+            self.assertEqual(hit[1], item["question"])
+
+    def test_realistic_phrasings_hit_right_entry(self):
+        cases = {
+            "你们什么时候发货": "多久发货？",
+            "怎么退": "可以退换货吗？",
+            "退款什么时候到账": "退款多久到账？",
+            "能开发票吗": "可以开发票吗？",
+            "我在新疆能发货吗": "配送到哪些地区？运费怎么算？",
+            "有优惠吗": "有优惠券吗？",
+            "怎么转人工": "怎么联系人工客服？",
+            "东西坏了": "商品有质量问题怎么办？",
+        }
+        for text, expected in cases.items():
+            hit = self.bot.match_faq(text, self.faq)
+            self.assertIsNotNone(hit, msg=f"{text!r} 未命中任何条目")
+            self.assertEqual(hit[1], expected, msg=f"{text!r} 命中了 {hit[1]!r}")
+
+    def test_unrelated_question_falls_back(self):
+        self.assertIsNone(self.bot.match_faq("今天天气怎么样", self.faq))
+        reply = self.bot.compose_reply("你们老板是谁", 1, self.bot.default_state(), self.faq)
+        self.assertIn("没有答案", reply)
 
     def test_start_command_lists_questions(self):
         reply = self.bot.compose_reply("/start", 1, self.bot.default_state(), self.faq)
