@@ -66,3 +66,15 @@
   假 token 时机器人打印 401 并每 5 秒重试，`status` 返回 0、`stop` 后返回 3；
   日志去重后每条只出现一次。
 - 仍然缺：真实 `TG_BOT_TOKEN`（拿到后 `tg_service.sh start` 即可上线）。
+
+## 上线实况（2026-10-30 06:0x，已连通真实 Telegram）
+
+- bot 身份：`@cueyaraBOT`（first_name `Cue-Yara`，id 8484255779）；凭据写入 `/workspace/.env`（chmod 600，已被 gitignore，仓库内 grep 无 token）。
+- 默认会话：`TG_CHAT_ID=5649315467`（用户 Oban_Xmas）。
+- 已真实发送：`message_id=4` 测试消息；并对用户「你好」自动回复欢迎语（`已回复 chat=5649315467`）。
+- 新增问候识别 `is_greeting()`：中文子串 + 英文单词边界（避免 `this` 命中 `hi`），修掉了「你好」回落到兜底话术的问题；测试增至 12 条全绿。
+- 修复 409 冲突与停机慢：
+  - 信号处理器抛 `_StopNow` 打断 30s 长轮询 → `stop` 从最长 30s 降到 **0.5s**；
+  - supervisor 收到 TERM 转发给子进程，`stop` 只按 pid 树清理（不再 `pkill -f`，避免误伤带路径的 shell）；
+  - 实测 `kill -9` 子进程后 2 秒自动拉起新实例（`机器人退出(code=137)，2s 后重启`），始终只有一个 getUpdates 消费者。
+- 运行中：`tools/tg_service.sh status` → `运行中 (pid 816)`，`logs/tg-bot.log` 持续记录。

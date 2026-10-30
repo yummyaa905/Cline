@@ -111,6 +111,16 @@ class TGBotTest(unittest.TestCase):
         self.assertIn("常见问题", reply)
         self.assertIn(self.faq[0]["question"], reply)
 
+    def test_greeting_gets_welcome_not_fallback(self):
+        for text in ("你好", "在吗？", "hi", "Hello!"):
+            reply = self.bot.compose_reply(text, 1, self.bot.default_state(), self.faq)
+            self.assertIn("24 小时在线", reply, msg=f"问候语 {text!r} 未得到欢迎语")
+
+    def test_greeting_does_not_swallow_normal_text(self):
+        self.assertFalse(self.bot.is_greeting("this item is broken"))
+        reply = self.bot.compose_reply("this item is broken", 1, self.bot.default_state(), self.faq)
+        self.assertNotIn("24 小时在线", reply)
+
     def test_match_faq_shipping(self):
         hit = self.bot.match_faq("你们多久发货呀？", self.faq)
         self.assertIsNotNone(hit)

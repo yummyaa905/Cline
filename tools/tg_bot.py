@@ -20,6 +20,7 @@
 import argparse
 import json
 import os
+import re
 import signal
 import sys
 import time
@@ -64,10 +65,15 @@ def log(msg):
         pass
 
 
+class _StopNow(Exception):
+    """信号处理里抛出，用来立即打断阻塞中的长轮询。"""
+
+
 def stop(*_args):
     global _running
     _running = False
     log("收到退出信号，准备结束 ...")
+    raise _StopNow
 
 
 # ---------------------------------------------------------------- 状态持久化
@@ -197,13 +203,31 @@ def whitelisted(chat_id):
 
 
 # ---------------------------------------------------------------- 回复逻辑
+GREETINGS = ("你好", "您好", "在吗", "在么", "hi", "hello", "嗨", "哈喽", "早上好", "晚上好", "有人吗")
+
+
+def welcome_text(faq):
+    lines = ["你好，我是自动客服机器人 🤖 24 小时在线。", "可以直接描述你的问题，也可以看下面这些常见问题："]
+    lines += [f"· {item['question']}" for item in faq[:6]]
+    lines.append("指令：/faq 常见问题 · /id 查看会话 ID · /reset 清空上下文")
+    return "\n".join(lines)
+
+
+def is_greeting(text):
+    """中文问候用子串匹配，英文问候按单词边界匹配，避免 'this' 命中 'hi'。"""
+    lowered = text.strip().lower()
+    if not lowered:
+        return False
+    for word in ("hi", "hello", "hey"):
+        if re.search(rf"\b{word}\b", lowered):
+            return True
+    return any(g in lowered for g in GREETINGS if not g.isascii())
+
+
 def compose_reply(text, chat_id, state, faq):
     lowered = text.strip().lower()
-    if lowered in ("/start", "/help"):
-        lines = ["你好，我是自动客服机器人 🤖", "可以直接描述你的问题，也可以看下面这些常见问题："]
-        lines += [f"· {item['question']}" for item in faq[:6]]
-        lines.append("指令：/faq 常见问题 · /id 查看会话 ID · /reset 清空上下文")
-        return "\n".join(lines)
+    if lowered in ("/start", "/help") or is_greeting(lowered):
+        return welcome_text(faq)
     if lowered == "/faq":
         if not faq:
             return "知识库暂时为空，请稍后再试或联系人工客服。"
@@ -294,6 +318,9 @@ def run_forever(token, faq, poll_timeout):
             handled = poll_once(token, state, faq, poll_timeout)
             if handled:
                 log(f"本轮处理 {handled} 条")
+        except _StopNow:
+            log("长轮询被中断，立即退出")
+            break
         except SystemExit as exc:  # tg.call 的错误
             log(f"[warn] 轮询失败: {exc}，5 秒后重试")
             save_state(state)

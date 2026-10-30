@@ -38,8 +38,17 @@ tools/tg_service.sh stop              # 优雅停止
 
 容器里没有 systemd/crontab，所以用两层保障：
 
-1. `tools/tg_service.sh` 的 supervisor 循环：进程退出非 0 时按 2→4→…→60 秒退避重启。
+1. `tools/tg_service.sh` 的 supervisor 循环：进程退出非 0 时按 2→4→…→60 秒退避重启
+   （supervisor 收到 TERM 会把信号转发给机器人，`stop` 实测 0.5 秒内退出且无残留进程）。
 2. `tools/tg_watchdog.sh` 挂到 Cline 的 cron 规格（每 5 分钟）：宿主进程被回收后把机器人重新拉起。
+
+## 注意事项（踩过的坑）
+
+- **不要在机器人运行时手动调用 `tools/tg.py updates`**：Telegram 同一 token 只允许一个
+  `getUpdates` 消费者，两个进程会互相抛出 `409 Conflict: terminated by other getUpdates request`，
+  并可能抢占 update 导致漏消息。要看消息请 `tools/tg_service.sh stop` 后再查。
+- 重启前务必 `stop`（脚本会等旧实例真正退出）；旧实例残留会导致 409 与新实例抢消息。
+- `TG_BOT_TOKEN` 一旦泄露，去 @BotFather `/revoke` 换新，再更新 `.env` 后 `restart` 即可。
 
 ## 已知限制
 
