@@ -99,6 +99,25 @@
 - 本轮（chat `5649315467`，会话 `1793340844984_07d19`）：按用户要求发出自我介绍，
   `tools/tg.py send` 返回 `message_id=13`，链路（桥 + Bot API）均正常。
 
+## 桥的健壮性修复 + 端到端验收（2026-10-30 06:1x–06:2x）
+
+- 观察到的问题：桥在 06:17:30 与 06:17:56 被重启两次，**正在处理中的那一轮**
+  （chat `5649315467`，会话 `1793341035558_750f1`）随桥的客户端进程一起被杀，
+  agent 的回复无任何提示地丢失（用户视角就是「没反应」）。
+- 修复（`tools/tg_bridge.mjs`）：
+  - `ask()` 发回合前把 `chats[<chat>].pending = {at, prompt}` 落盘，拿到回复后 `clearPending()`；
+  - `pollLoop()` 启动时先 `recoverPending()`：对残留 `pending` 的 chat 发一条
+    「⚠️ 上一次请求（时间）处理到一半被重启打断了…请重发一次；想清空上下文可以 /new」。
+- 验证（**未碰真实 bot**：`TG_API_BASE` 指向本地假 Telegram API + 临时 state 文件）：
+  - 预置一条 `pending` → `--once` 启动后发出 **1 条** `sendMessage` 且 `pending` 被清空；
+  - 再跑一次 → **0 条**发送（幂等，不会重复骚扰）；
+  - `node --check tools/tg_bridge.mjs` 通过；`python3 -m unittest discover -s tests` **15 条全绿**；
+    `python3 tools/tg.py me` → `@cueyaraBOT` 在线（链路通）。
+- 运维注意（本轮踩到的坑）：
+  - `pgrep -f <pattern>` 会匹配到执行它的那条 shell 命令本身，本轮因此误杀了自己的 shell；
+    要精确杀进程用 `pgrep -P <ppid>` / `ps -eo pid,cmd | grep '[t]g_bridge'`。
+  - `logs/tg-bridge.log` **不会自动轮转**，长期跑需要手动清理。
+
 ## Telegram ↔ Cline 桥（2026-10-30 06:18，用户真实需求）
 
 > 用户澄清：要的是「在 TG 里跟我（Agent）对话」，不是客服机器人。FAQ 机器人降级为可选。

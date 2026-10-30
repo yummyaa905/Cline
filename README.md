@@ -57,6 +57,9 @@ node tools/tg_bridge.mjs --replay <chatId> "指令"  # 走真实链路：agent �
 - **同一个 bot token 只能有一个 `getUpdates` 消费者**：桥在跑时不要再 `python3 tools/tg.py updates`，
   否则互相 `409 Conflict` 并可能抢消息。桥和 FAQ 机器人（`tg_service.sh`）也只能二选一，
   `tg_bridge_service.sh start` 会自动停掉 FAQ 机器人。
+- **别在一轮回答进行中 `restart`**：会把正在处理的那一轮一起杀掉，回复就丢了。
+  桥会把「处理中」的回合写进 `logs/tg_bridge_state.json`，重启后自动给对应 chat 发一条
+  「上次被打断，请重发」的提示，不会静默丢消息。
 - 长任务请用 `setsid nohup ... &` 起，前台跑容易被会话超时打断。
 - 并发别乱开：多个 `--replay` 同时跑会各自建会话、互相拖慢（实测会卡住），一次一轮。
 
