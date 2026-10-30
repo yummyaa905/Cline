@@ -69,7 +69,7 @@
 
 ## 上线实况（2026-10-30 06:0x，已连通真实 Telegram）
 
-- bot 身份：`@cueyaraBOT`（first_name `Cue-Yara`，id 8484255779）；凭据写入 `/workspace/.env`（chmod 600，已被 gitignore，仓库内 grep 无 token）。
+- bot 身份：`@cueyaraBOT`（first_name `Cue-Yara`，id 已脱敏 `8484****79`）；凭据只在 `/workspace/.env`（chmod 600，已被 gitignore，仓库内无 token）。
 - 默认会话：`TG_CHAT_ID=5649315467`（用户 Oban_Xmas）。
 - 已真实发送：`message_id=4` 测试消息；并对用户「你好」自动回复欢迎语（`已回复 chat=5649315467`）。
 - 新增问候识别 `is_greeting()`：中文子串 + 英文单词边界（避免 `this` 命中 `hi`），修掉了「你好」回落到兜底话术的问题；测试增至 12 条全绿。
