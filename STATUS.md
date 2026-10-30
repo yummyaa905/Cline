@@ -35,3 +35,17 @@
 | Agenda 任务 + `unattended` 自动化 | ✅ 跨会话 | 任务排队后自动开跑，可链式续跑 |
 | git 分支 + 本文件（记忆常驻） | ✅ 跨沙箱 | 状态与代码可恢复 |
 | tmux / nohup / systemd 常驻进程 | ❌ | 容器无 systemd/crontab，沙箱销毁即终止 |
+
+## Telegram 接入（2026-10-30 核实）
+
+- Composio 内置 `telegram` 工具包在本会话被禁用：
+  `[Session Restriction] Toolkit 'telegram' is not allowed for this session`。
+  可选替代连接器：Discord / Slack / WhatsApp / Teams / Webex / Outlook / Gmail（均需先授权）。
+- 沙箱可直连 `https://api.telegram.org`（HTTP 302），因此改用官方 Bot API 自建通道：
+  `tools/tg.py`（零依赖，仅标准库）
+  - `python3 tools/tg.py me` → 校验 token
+  - `python3 tools/tg.py send --chat <id> --text "..."` → 发消息
+  - `python3 tools/tg.py updates` → 一次性拉取
+  - `python3 tools/tg.py listen --echo` → 常驻长轮询（配合 cron/agenda 可做机器人）
+  - token 只从 `TG_BOT_TOKEN` 环境变量或 `--token` 读取，**不要提交进仓库**
+- 已验证：无 token 时报「缺少 token」；假 token 时 Telegram 返回 401 Unauthorized（链路通、错误处理正常）。
