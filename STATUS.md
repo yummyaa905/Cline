@@ -53,3 +53,16 @@
   `.env` 已在 `.gitignore` 中忽略，永不入库。脚本会自动读取仓库根目录或当前目录的 `.env`。
 - 已验证：`.env` 内 token 生效（请求打到 API 后返回 401）、`TG_CHAT_ID` 作为默认发送目标生效、
   `listen` 在 401 时会打印 warn 并每 5 秒重试。
+
+## 24/7 客服机器人（2026-10-30 完成，代码已推送）
+
+- `tools/tg_bot.py`：长轮询 + offset 持久化、FAQ 关键词匹配、可选 OpenAI 兼容 AI、
+  按 chat 限流、消息去重、`TG_ALLOWED_CHATS` 白名单、日志落盘、SIGINT/SIGTERM 优雅退出。
+- `data/faq.json`：6 条示例知识库（下单/发货/退换/查单/优惠/工作时间）。
+- `tools/tg_service.sh`：supervisor（start/stop/restart/status/logs），非 0 退出时 2→4→…→60s 退避重启。
+- `tools/tg_watchdog.sh`：进程不在就拉起，供 cron 每 5 分钟调用。
+- `tests/test_tg_bot.py`：10 个用例，用本地假 Telegram API 端到端跑通 → `Ran 10 tests ... OK`。
+- 实测：无 `.env` 时 `tg_service.sh start` 报「缺少凭据」并退出 1；
+  假 token 时机器人打印 401 并每 5 秒重试，`status` 返回 0、`stop` 后返回 3；
+  日志去重后每条只出现一次。
+- 仍然缺：真实 `TG_BOT_TOKEN`（拿到后 `tg_service.sh start` 即可上线）。
