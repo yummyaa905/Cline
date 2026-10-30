@@ -49,3 +49,7 @@
   - `python3 tools/tg.py listen --echo` → 常驻长轮询（配合 cron/agenda 可做机器人）
   - token 只从 `TG_BOT_TOKEN` 环境变量或 `--token` 读取，**不要提交进仓库**
 - 已验证：无 token 时报「缺少 token」；假 token 时 Telegram 返回 401 Unauthorized（链路通、错误处理正常）。
+- 凭据配置：复制 `.env.example` 为 `.env` 并填 `TG_BOT_TOKEN`（可选 `TG_CHAT_ID`）；
+  `.env` 已在 `.gitignore` 中忽略，永不入库。脚本会自动读取仓库根目录或当前目录的 `.env`。
+- 已验证：`.env` 内 token 生效（请求打到 API 后返回 401）、`TG_CHAT_ID` 作为默认发送目标生效、
+  `listen` 在 401 时会打印 warn 并每 5 秒重试。

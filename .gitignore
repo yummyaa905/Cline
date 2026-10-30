@@ -1,1 +1,3 @@
 .cline-home/
+.env
+__pycache__/

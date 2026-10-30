@@ -48,10 +48,35 @@ def call(token, method, params=None, timeout=30):
     return payload["result"]
 
 
+def load_dotenv():
+    """从仓库根目录或当前目录的 .env 读取 TG_* 变量（不覆盖已有环境变量）。"""
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(os.path.dirname(here), ".env"),
+        os.path.join(os.getcwd(), ".env"),
+    ]
+    for path in candidates:
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip().removeprefix("export ").strip()
+                if key.startswith("TG_") and key not in os.environ:
+                    os.environ[key] = value.strip().strip("'\"")
+
+
 def resolve_token(args):
+    load_dotenv()
     token = args.token or os.environ.get("TG_BOT_TOKEN")
     if not token:
-        raise SystemExit("缺少 token：请设置环境变量 TG_BOT_TOKEN，或传入 --token")
+        raise SystemExit(
+            "缺少 token：请设置环境变量 TG_BOT_TOKEN、或在仓库根目录的 .env 写入 "
+            "TG_BOT_TOKEN=...，也可以传 --token"
+        )
     return token
 
 
@@ -61,11 +86,15 @@ def cmd_me(args):
 
 
 def cmd_send(args):
+    load_dotenv()
+    chat = args.chat or os.environ.get("TG_CHAT_ID")
+    if not chat:
+        raise SystemExit("缺少目标：请传 --chat <chat_id|@channel>，或在 .env 设置 TG_CHAT_ID")
     result = call(
         resolve_token(args),
         "sendMessage",
         {
-            "chat_id": args.chat,
+            "chat_id": chat,
             "text": args.text,
             "disable_web_page_preview": "true" if args.no_preview else "false",
         },
@@ -89,8 +118,9 @@ def cmd_updates(args):
 
 def cmd_listen(args):
     token = resolve_token(args)
+    chat_filter = args.chat or os.environ.get("TG_CHAT_ID")
     offset = None
-    print(f"开始常驻轮询（chat={args.chat or '任意'}），Ctrl-C 退出 ...", flush=True)
+    print(f"开始常驻轮询（chat={chat_filter or '任意'}），Ctrl-C 退出 ...", flush=True)
     while True:
         params = {"timeout": args.poll_timeout, "limit": 50}
         if offset is not None:
@@ -106,7 +136,7 @@ def cmd_listen(args):
             msg = upd.get("message") or {}
             chat_id = (msg.get("chat") or {}).get("id")
             text = msg.get("text", "")
-            if args.chat and str(chat_id) != str(args.chat):
+            if chat_filter and str(chat_id) != str(chat_filter):
                 continue
             print(f"[{time.strftime('%H:%M:%S')}] chat={chat_id} text={text!r}", flush=True)
             if args.echo and chat_id is not None:
@@ -121,7 +151,7 @@ def build_parser():
     sub.add_parser("me", help="校验 token 并打印 bot 信息").set_defaults(func=cmd_me)
 
     s = sub.add_parser("send", help="发送文本消息")
-    s.add_argument("--chat", required=True, help="chat_id 或 @channel")
+    s.add_argument("--chat", help="chat_id 或 @channel（默认读 .env 的 TG_CHAT_ID）")
     s.add_argument("--text", required=True)
     s.add_argument("--no-preview", action="store_true", help="关闭链接预览")
     s.set_defaults(func=cmd_send)
